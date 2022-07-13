@@ -5,7 +5,7 @@ using UnityEngine;
 public class ObjectPool : MonoBehaviour
 {
     #region Define
-    private const int DEFAULT_CAPACITY = 10;
+    private readonly int checkCount = 5;
     #endregion
 
     [SerializeField]
@@ -17,85 +17,135 @@ public class ObjectPool : MonoBehaviour
     private List<GameObject> _pooledObject_list;
     private Stack<GameObject> _usebleObject_stack;
 
-    private int _useableObjectCount;
-
     private void Start()
     {
-        CreateObjects(DEFAULT_CAPACITY);
+        RequestCreateObjects();
+    }
+
+    /// <summary>
+    /// オブジェクトプールの作成をレクエストする
+    /// </summary>
+    public void RequestCreateObjects(int capacity = 10)
+    {
+        StartCoroutine(CreateObjectsAsync(capacity));
+    }
+
+    /// <summary>
+    /// オブジェクトプールの作成
+    /// </summary>
+    private IEnumerator CreateObjectsAsync(int capacity)
+    {
+        _pooledObject_list = new List<GameObject>(capacity);
+
+        for (int i = 0; i < _pooledObject_list.Count; i++)
+        {
+            var go = Instantiate(_pooledObject, _parent);
+
+            go.SetActive(false);
+            // リストに設定する
+            _pooledObject_list[i] = go;
+            PushToObjectStack(go);
+            yield return null;
+        }
+        yield return null;
+    }
+
+    /// <summary>
+    /// オブジェクトの取得をする
+    /// </summary>
+    public GameObject Get(Vector3 pos)
+    {
+        CheckUseableObjectsCount(checkCount);
+
+        // スタックから取得
+        if (_usebleObject_stack.TryPop(out GameObject go))
+        {
+            SetObjectDate(go, true, pos);
+            return go;
+        }
+        // スタックに無かった場合は生成する
+        else
+        {
+            go = CreatePooledObject(_pooledObject);
+            go.transform.position = pos;
+            _pooledObject_list.Add(go);
+            return go;
+        }
+    }
+
+    /// <summary>
+    /// プールオブジェクトのクリア
+    /// </summary>
+    public void ClearPool()
+    {
+        _usebleObject_stack.Clear();
+        _pooledObject_list.Clear();
+    }
+
+    /// <summary>
+    /// 使用可能なオブジェクトの数を確認する
+    /// </summary>
+    private void CheckUseableObjectsCount(int checkCount)
+    {
+        // スタック量が一定以下になった時
+        if (GetStackCount() < checkCount)
+        {
+            StartCoroutine(AddUseableObjectToStackAsync());
+        }
+    }
+
+    /// <summary>
+    /// <para>GameObjectのプロパティを設定する</para>
+    /// </summary>
+    private void SetObjectDate(GameObject go, bool setActive, Vector3 pos)
+    {
+        go.SetActive(setActive);
+        go.transform.position = pos;
+    }
+
+    /// <summary>
+    /// スタック数の取得
+    /// </summary>
+    private int GetStackCount()
+    {
+        return _usebleObject_stack.Count;
     }
 
     /// <summary>
     /// オブジェクトの作成
     /// </summary>
-    /// <param name="capacity">プールの上限</param>
-    public void CreateObjects(int capacity = DEFAULT_CAPACITY)
+    private GameObject CreatePooledObject(GameObject pooledObject)
     {
-        _pooledObject_list = new List<GameObject>(capacity);
-
-        for (int i = 0; i < DEFAULT_CAPACITY; i++)
-        {
-            var go = Instantiate(_pooledObject);
-            go.SetActive(false);
-
-            _usebleObject_stack.Push(go);
-            _useableObjectCount++;
-
-            go.transform.SetParent(_parent, false);
-            _pooledObject_list.Add(go);
-        }
+        var go = Instantiate(pooledObject);
+        AddToObjectList(go);
+        return go;
     }
 
     /// <summary>
-    /// オブジェクトの取得
+    /// <para>リストにオブジェクトの追加をする</para>
+    /// <see cref="_pooledObject_list"/>
     /// </summary>
-    /// <param name="pos">初期位置</param>
-    /// <returns></returns>
-    public GameObject Get(Vector3 pos)
+    private void AddToObjectList(GameObject go)
     {
-        GameObject go;
-
-        if (_usebleObject_stack.TryPop(out go))
-        {
-            _useableObjectCount--;
-        }
-
-        if (go is not null)
-        {
-            go.SetActive(true);
-            go.transform.position = pos;
-            return go;
-        }
-        else
-        {
-            var ngo = Instantiate(_pooledObject);
-            ngo.transform.position = pos;
-            _pooledObject_list.Add(ngo);
-            return go;
-        }
+        _pooledObject_list.Add(go);
     }
 
-    private void PoshToStack(GameObject go)
+    private void PushToObjectStack(GameObject go)
     {
-        _useableObjectCount++;
         _usebleObject_stack.Push(go);
     }
 
-    private GameObject CreateObject()
+    /// <summary>
+    /// <para>使用可能なオブジェクトをスタックに追加する</para> 
+    /// <see cref="_usebleObject_stack"/>
+    /// </summary>
+    private IEnumerator AddUseableObjectToStackAsync()
     {
-        return Instantiate(_pooledObject);
-    }
-
-    private IEnumerator CheckGetableObjectAsync()
-    {
-        while (true)
+        foreach (var item in _pooledObject_list)
         {
-            foreach (var item in _pooledObject_list)
+            if (item.activeSelf is false)
             {
-                if (item.activeSelf is false)
-                {
-                    _usebleObject_stack.Push(item);
-                    yield return null;
-                }
+                _usebleObject_stack.Push(item);
             }
             yield return null;
         }
