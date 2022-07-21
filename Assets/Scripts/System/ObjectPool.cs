@@ -1,154 +1,104 @@
-using System.Collections;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class ObjectPool : MonoBehaviour
+public class ObjectPool<T> : MonoBehaviour where T : MonoBehaviour
 {
-    #region Define
-    private readonly int checkCount = 5;
+    #region ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
+    private ObjectPool() { }
+
+    public ObjectPool(T pooledObject, Action onCreatedPool = null, Action onCreatedObject = null, int defaultCount = 10)
+    {
+        _pooledObject = pooledObject;
+        OnCreatedPool += onCreatedPool;
+        OnCreatedObject += onCreatedObject;
+        _objectCount = defaultCount;
+    }
     #endregion
 
-    [SerializeField]
-    private Transform _parent;
+    #region Field
+    // ãƒ—ãƒ¼ãƒ«ãŒä½œæˆæ¸ˆã¿ã‹
+    public bool IsCreatedPool { get; private set; } = false;
+    // ä½œæˆã™ã‚‹ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆ
+    private T _pooledObject { get; set; } = null;
+    // ãƒ—ãƒ¼ãƒ«ã®å®¹é‡
+    private int _objectCount { get; set; } = 10;
 
-    [SerializeField]
-    private GameObject _pooledObject;
+    // ãƒ—ãƒ¼ãƒ«ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®ãƒªã‚¹ãƒˆ
+    private List<T> _pooledObjectList;
 
-    private List<GameObject> _pooledObject_list;
-    private Stack<GameObject> _usebleObject_stack;
+    // ã‚¤ãƒ™ãƒ³ãƒˆ
+    private Action OnCreatedPool;
+    private Action OnCreatedObject;
+    #endregion
 
-    private void Start()
-    {
-        RequestCreateObjects();
-    }
-
+    #region Public Function
     /// <summary>
-    /// ƒIƒuƒWƒFƒNƒgƒv[ƒ‹‚Ìì¬‚ğƒŒƒNƒGƒXƒg‚·‚é
+    /// ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®å–å¾—
     /// </summary>
-    public void RequestCreateObjects(int capacity = 10)
+    public T Get(Vector3 pos, Transform parent = null)
     {
-        StartCoroutine(CreateObjectsAsync(capacity));
-    }
-
-    /// <summary>
-    /// ƒIƒuƒWƒFƒNƒgƒv[ƒ‹‚Ìì¬
-    /// </summary>
-    private IEnumerator CreateObjectsAsync(int capacity)
-    {
-        _pooledObject_list = new List<GameObject>(capacity);
-
-        for (int i = 0; i < _pooledObject_list.Count; i++)
+        foreach (var item in _pooledObjectList)
         {
-            var go = Instantiate(_pooledObject, _parent);
-
-            go.SetActive(false);
-            // ƒŠƒXƒg‚Éİ’è‚·‚é
-            _pooledObject_list[i] = go;
-            PushToObjectStack(go);
-            yield return null;
+            if (item.gameObject.activeInHierarchy is false)
+            {
+                item.transform.position = pos;
+                item.transform.parent = parent;
+                return item;
+            }
         }
-        yield return null;
-    }
-
-    /// <summary>
-    /// ƒIƒuƒWƒFƒNƒg‚Ìæ“¾‚ğ‚·‚é
-    /// </summary>
-    public GameObject Get(Vector3 pos)
-    {
-        CheckUseableObjectsCount(checkCount);
-
-        // ƒXƒ^ƒbƒN‚©‚çæ“¾
-        if (_usebleObject_stack.TryPop(out GameObject go))
-        {
-            SetObjectDate(go, true, pos);
-            return go;
-        }
-        // ƒXƒ^ƒbƒN‚É–³‚©‚Á‚½ê‡‚Í¶¬‚·‚é
-        else
-        {
-            go = CreatePooledObject(_pooledObject);
-            go.transform.position = pos;
-            _pooledObject_list.Add(go);
-            return go;
-        }
-    }
-
-    /// <summary>
-    /// ƒv[ƒ‹ƒIƒuƒWƒFƒNƒg‚ÌƒNƒŠƒA
-    /// </summary>
-    public void ClearPool()
-    {
-        _usebleObject_stack.Clear();
-        _pooledObject_list.Clear();
-    }
-
-    /// <summary>
-    /// g—p‰Â”\‚ÈƒIƒuƒWƒFƒNƒg‚Ì”‚ğŠm”F‚·‚é
-    /// </summary>
-    private void CheckUseableObjectsCount(int checkCount)
-    {
-        // ƒXƒ^ƒbƒN—Ê‚ªˆê’èˆÈ‰º‚É‚È‚Á‚½
-        if (GetStackCount() < checkCount)
-        {
-            StartCoroutine(AddUseableObjectToStackAsync());
-        }
-    }
-
-    /// <summary>
-    /// <para>GameObject‚ÌƒvƒƒpƒeƒB‚ğİ’è‚·‚é</para>
-    /// </summary>
-    private void SetObjectDate(GameObject go, bool setActive, Vector3 pos)
-    {
-        go.SetActive(setActive);
-        go.transform.position = pos;
-    }
-
-    /// <summary>
-    /// ƒXƒ^ƒbƒN”‚Ìæ“¾
-    /// </summary>
-    private int GetStackCount()
-    {
-        return _usebleObject_stack.Count;
-    }
-
-    /// <summary>
-    /// ƒIƒuƒWƒFƒNƒg‚Ìì¬
-    /// </summary>
-    private GameObject CreatePooledObject(GameObject pooledObject)
-    {
-        var go = Instantiate(pooledObject);
-        AddToObjectList(go);
+        var go = CreatePooledObject();
+        go.transform.parent = parent;
+        go.gameObject.SetActive(true);
         return go;
     }
 
     /// <summary>
-    /// <para>ƒŠƒXƒg‚ÉƒIƒuƒWƒFƒNƒg‚Ì’Ç‰Á‚ğ‚·‚é</para>
-    /// <see cref="_pooledObject_list"/>
+    /// <para>ãƒ—ãƒ¼ãƒ«ã®ä½œæˆ</para>
     /// </summary>
-    private void AddToObjectList(GameObject go)
+    public void CreatePool()
     {
-        _pooledObject_list.Add(go);
-    }
+        if (IsCreatedPool is false)
+            return;
 
-    private void PushToObjectStack(GameObject go)
-    {
-        _usebleObject_stack.Push(go);
+        _pooledObjectList = new List<T>(_objectCount);
+
+        for (int i = 0; i < _objectCount; i++)
+        {
+            // ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®ç”Ÿæˆ
+            CreatePooledObject();
+        }
+
+        IsCreatedPool = true;
+        OnCreatedPool?.Invoke();
     }
 
     /// <summary>
-    /// <para>g—p‰Â”\‚ÈƒIƒuƒWƒFƒNƒg‚ğƒXƒ^ƒbƒN‚É’Ç‰Á‚·‚é</para> 
-    /// <see cref="_usebleObject_stack"/>
+    /// ãƒ—ãƒ¼ãƒ«ã®ã‚¯ãƒªã‚¢
     /// </summary>
-    private IEnumerator AddUseableObjectToStackAsync()
+    public void ClearPool()
     {
-        foreach (var item in _pooledObject_list)
-        {
-            if (item.activeSelf is false)
-            {
-                _usebleObject_stack.Push(item);
-            }
-            yield return null;
-        }
-        yield return null;
+        _pooledObjectList.Clear();
+        OnCreatedObject = null;
+        OnCreatedPool = null;
+        IsCreatedPool = false;
     }
+    #endregion
+
+    #region Private Function
+    /// <summary>
+    /// ãƒ—ãƒ¼ãƒ«ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®ä½œæˆ
+    /// </summary>
+    private T CreatePooledObject()
+    {
+        // ç”Ÿæˆ
+        var obj = Instantiate(_pooledObject);
+        obj.gameObject.SetActive(false);
+        OnCreatedObject?.Invoke();
+
+        // ç®¡ç†ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã«è¿½åŠ 
+        _pooledObjectList.Add(obj);
+        return obj;
+    }
+    #endregion
 }
